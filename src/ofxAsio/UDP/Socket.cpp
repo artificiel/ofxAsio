@@ -9,7 +9,10 @@ namespace ofxAsio {
 			: socket(this->ioService)
 			, work(this->ioService)
 		{
+						
+			asio::socket_base::broadcast option(true);
 			socket.open(asio::ip::udp::v4());
+			socket.set_option(option);
 
 			this->asyncThread = thread([this]() {
 				this->ioService.run();
