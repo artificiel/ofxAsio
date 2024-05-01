@@ -2,7 +2,7 @@
 // detail/impl/kqueue_reactor.ipp
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
-// Copyright (c) 2003-2015 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2024 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 // Copyright (c) 2005 Stefan Arentz (stefan at soze dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -25,9 +25,13 @@
 #include "asio/detail/throw_error.hpp"
 #include "asio/error.hpp"
 
+#if defined(__NetBSD__)
+# include <sys/param.h>
+#endif
+
 #include "asio/detail/push_options.hpp"
 
-#if defined(__NetBSD__)
+#if defined(__NetBSD__) && __NetBSD_Version__ < 999001500
 # define ASIO_KQUEUE_EV_SET(ev, ident, filt, flags, fflags, data, udata) \
     EV_SET(ev, ident, filt, flags, fflags, data, \
       reinterpret_cast<intptr_t>(static_cast<void*>(udata)))
@@ -42,10 +46,12 @@ namespace detail {
 kqueue_reactor::kqueue_reactor(asio::execution_context& ctx)
   : execution_context_service_base<kqueue_reactor>(ctx),
     scheduler_(use_service<scheduler>(ctx)),
-    mutex_(),
+    mutex_(ASIO_CONCURRENCY_HINT_IS_LOCKING(
+          REACTOR_REGISTRATION, scheduler_.concurrency_hint())),
     kqueue_fd_(do_kqueue_create()),
     interrupter_(),
-    shutdown_(false)
+    shutdown_(false),
+    registered_descriptors_mutex_(mutex_.enabled())
 {
   struct kevent events[1];
   ASIO_KQUEUE_EV_SET(&events[0], interrupter_.read_descriptor(),
@@ -184,14 +190,23 @@ void kqueue_reactor::move_descriptor(socket_type,
   source_descriptor_data = 0;
 }
 
+void kqueue_reactor::call_post_immediate_completion(
+    operation* op, bool is_continuation, const void* self)
+{
+  static_cast<const kqueue_reactor*>(self)->post_immediate_completion(
+      op, is_continuation);
+}
+
 void kqueue_reactor::start_op(int op_type, socket_type descriptor,
     kqueue_reactor::per_descriptor_data& descriptor_data, reactor_op* op,
-    bool is_continuation, bool allow_speculative)
+    bool is_continuation, bool allow_speculative,
+    void (*on_immediate)(operation*, bool, const void*),
+    const void* immediate_arg)
 {
   if (!descriptor_data)
   {
     op->ec_ = asio::error::bad_descriptor;
-    post_immediate_completion(op, is_continuation);
+    on_immediate(op, is_continuation, immediate_arg);
     return;
   }
 
@@ -199,7 +214,7 @@ void kqueue_reactor::start_op(int op_type, socket_type descriptor,
 
   if (descriptor_data->shutdown_)
   {
-    post_immediate_completion(op, is_continuation);
+    on_immediate(op, is_continuation, immediate_arg);
     return;
   }
 
@@ -214,7 +229,7 @@ void kqueue_reactor::start_op(int op_type, socket_type descriptor,
       if (op->perform())
       {
         descriptor_lock.unlock();
-        scheduler_.post_immediate_completion(op, is_continuation);
+        on_immediate(op, is_continuation, immediate_arg);
         return;
       }
 
@@ -233,7 +248,7 @@ void kqueue_reactor::start_op(int op_type, socket_type descriptor,
         {
           op->ec_ = asio::error_code(errno,
               asio::error::get_system_category());
-          scheduler_.post_immediate_completion(op, is_continuation);
+          on_immediate(op, is_continuation, immediate_arg);
           return;
         }
       }
@@ -274,6 +289,35 @@ void kqueue_reactor::cancel_ops(socket_type,
       ops.push(op);
     }
   }
+
+  descriptor_lock.unlock();
+
+  scheduler_.post_deferred_completions(ops);
+}
+
+void kqueue_reactor::cancel_ops_by_key(socket_type,
+    kqueue_reactor::per_descriptor_data& descriptor_data,
+    int op_type, void* cancellation_key)
+{
+  if (!descriptor_data)
+    return;
+
+  mutex::scoped_lock descriptor_lock(descriptor_data->mutex_);
+
+  op_queue<operation> ops;
+  op_queue<reactor_op> other_ops;
+  while (reactor_op* op = descriptor_data->op_queue_[op_type].front())
+  {
+    descriptor_data->op_queue_[op_type].pop();
+    if (op->cancellation_key_ == cancellation_key)
+    {
+      op->ec_ = asio::error::operation_aborted;
+      ops.push(op);
+    }
+    else
+      other_ops.push(op);
+  }
+  descriptor_data->op_queue_[op_type].push(other_ops);
 
   descriptor_lock.unlock();
 
@@ -325,10 +369,16 @@ void kqueue_reactor::deregister_descriptor(socket_type descriptor,
           context(), static_cast<uintmax_t>(descriptor),
           reinterpret_cast<uintmax_t>(descriptor_data)));
 
-    free_descriptor_state(descriptor_data);
-    descriptor_data = 0;
-
     scheduler_.post_deferred_completions(ops);
+
+    // Leave descriptor_data set so that it will be freed by the subsequent
+    // call to cleanup_descriptor_data.
+  }
+  else
+  {
+    // We are shutting down, so prevent cleanup_descriptor_data from freeing
+    // the descriptor_data object and let the destructor free it instead.
+    descriptor_data = 0;
   }
 }
 
@@ -362,18 +412,34 @@ void kqueue_reactor::deregister_internal_descriptor(socket_type descriptor,
           context(), static_cast<uintmax_t>(descriptor),
           reinterpret_cast<uintmax_t>(descriptor_data)));
 
+    // Leave descriptor_data set so that it will be freed by the subsequent
+    // call to cleanup_descriptor_data.
+  }
+  else
+  {
+    // We are shutting down, so prevent cleanup_descriptor_data from freeing
+    // the descriptor_data object and let the destructor free it instead.
+    descriptor_data = 0;
+  }
+}
+
+void kqueue_reactor::cleanup_descriptor_data(
+    per_descriptor_data& descriptor_data)
+{
+  if (descriptor_data)
+  {
     free_descriptor_state(descriptor_data);
     descriptor_data = 0;
   }
 }
 
-void kqueue_reactor::run(bool block, op_queue<operation>& ops)
+void kqueue_reactor::run(long usec, op_queue<operation>& ops)
 {
   mutex::scoped_lock lock(mutex_);
 
   // Determine how long to block while waiting for events.
   timespec timeout_buf = { 0, 0 };
-  timespec* timeout = block ? get_timeout(timeout_buf) : &timeout_buf;
+  timespec* timeout = usec ? get_timeout(usec, timeout_buf) : &timeout_buf;
 
   lock.unlock();
 
@@ -496,7 +562,8 @@ int kqueue_reactor::do_kqueue_create()
 kqueue_reactor::descriptor_state* kqueue_reactor::allocate_descriptor_state()
 {
   mutex::scoped_lock descriptors_lock(registered_descriptors_mutex_);
-  return registered_descriptors_.alloc();
+  return registered_descriptors_.alloc(ASIO_CONCURRENCY_HINT_IS_LOCKING(
+        REACTOR_IO, scheduler_.concurrency_hint()));
 }
 
 void kqueue_reactor::free_descriptor_state(kqueue_reactor::descriptor_state* s)
@@ -517,11 +584,13 @@ void kqueue_reactor::do_remove_timer_queue(timer_queue_base& queue)
   timer_queues_.erase(&queue);
 }
 
-timespec* kqueue_reactor::get_timeout(timespec& ts)
+timespec* kqueue_reactor::get_timeout(long usec, timespec& ts)
 {
   // By default we will wait no longer than 5 minutes. This will ensure that
   // any changes to the system clock are detected after no longer than this.
-  long usec = timer_queues_.wait_duration_usec(5 * 60 * 1000 * 1000);
+  const long max_usec = 5 * 60 * 1000 * 1000;
+  usec = timer_queues_.wait_duration_usec(
+      (usec < 0 || max_usec < usec) ? max_usec : usec);
   ts.tv_sec = usec / 1000000;
   ts.tv_nsec = (usec % 1000000) * 1000;
   return &ts;
