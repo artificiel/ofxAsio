@@ -24,9 +24,9 @@ namespace ofxAsio {
 		}
 
 		//----------
-		shared_ptr<DataGram> Socket::receive(size_t bufferSize) {
+		std::shared_ptr<DataGram> Socket::receive(size_t bufferSize) {
 			asio::error_code errorCode;
-			auto dataGram = make_shared<DataGram>();
+			auto dataGram = std::make_shared<DataGram>();
 			auto & message = dataGram->getMessage();
 			message.resize(bufferSize);
 
@@ -37,7 +37,7 @@ namespace ofxAsio {
 			if (errorCode) {
 				//return empty pointer if we failed to receive
 				ofLogError("ofxAsio::TCP::Socket::receive") << "Cannot receive data. " << asio::system_error(errorCode).what();
-				return shared_ptr<DataGram>();
+				return std::shared_ptr<DataGram>();
 			}
 			else {
 				//return pointer to a DataGram object if succeed
@@ -47,7 +47,7 @@ namespace ofxAsio {
 		}
 
 		//----------
-		bool Socket::send(shared_ptr<DataGram> dataGram) {
+		bool Socket::send(std::shared_ptr<DataGram> dataGram) {
 			asio::error_code errorCode;
 			const auto & message = dataGram->getMessage();
 

@@ -1,5 +1,5 @@
 #include "Message.h"
-
+//#include "ofxFmtLib.hpp"
 //----------
 Message::Message() {
 	
@@ -262,6 +262,7 @@ bool Message::getData(ofPixels & data) const {
 		if (data.getWidth() != header.width || data.getHeight() != header.height || data.getPixelFormat() != pixelFormat) {
 			data.allocate(header.width, header.height, pixelFormat);
 		}
+//		ofLogNotice("gg") << fmt::format("data {}x{}/{}@{}, header {}x{}/{}@{}",data.getWidth(), data.getHeight(), data.getPixelFormat(), data.size(), header.width, header.height,pixelFormat, bodySize);
 		if (data.size() != bodySize) {
 			ofLogError("Message") << "Message body is of wrong size to fill pixels. Maybe a bug in sender?";
 			return false;

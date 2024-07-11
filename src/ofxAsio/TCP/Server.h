@@ -10,7 +10,7 @@ namespace ofxAsio {
 			void update() override;
 		protected:
 			int port;
-			unique_ptr<asio::ip::tcp::acceptor> acceptor;
+			std::unique_ptr<asio::ip::tcp::acceptor> acceptor;
 		};
 	}
 }

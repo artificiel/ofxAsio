@@ -14,7 +14,7 @@ namespace ofxAsio {
 		}
 
 		//----------
-		EndPoint::EndPoint(string ipAddressString, int port) {
+		EndPoint::EndPoint(std::string ipAddressString, int port) {
 			auto ipAddress = asio::ip::address::from_string(ipAddressString);
 			auto endPoint = asio::ip::udp::endpoint(ipAddress, port);
 			this->endPoint = endPoint;
@@ -31,7 +31,7 @@ namespace ofxAsio {
 		}
 
 		//----------
-		ostream & operator<<(ostream & os, const EndPoint & endPoint) {
+		std::ostream & operator<<(std::ostream & os, const EndPoint & endPoint) {
 			os << endPoint.getEndPoint();
 			return os;
 		}

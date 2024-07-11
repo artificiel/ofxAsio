@@ -18,7 +18,7 @@ namespace ofxAsio {
 			}
 
 			if (!this->isConnected()) {
-				this->acceptor = make_unique<tcp::acceptor>(this->ioService, tcp::endpoint(tcp::v4(), port));
+				this->acceptor = std::make_unique<tcp::acceptor>(this->ioService, tcp::endpoint(tcp::v4(), port));
 				this->acceptor->accept(this->socket);
 			}
 		}

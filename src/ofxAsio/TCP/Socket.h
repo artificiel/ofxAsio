@@ -13,8 +13,8 @@ namespace ofxAsio {
 			bool isActive() const;
 			bool isConnected() const;
 
-			shared_ptr<DataGram> receive(size_t bufferSize = 9216);
-			bool send(shared_ptr<DataGram>);
+			std::shared_ptr<DataGram> receive(size_t bufferSize = 9216);
+			bool send(std::shared_ptr<DataGram>);
 		protected:
 			bool active = false;
 			asio::io_service ioService;

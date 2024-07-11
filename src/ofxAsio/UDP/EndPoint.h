@@ -8,7 +8,7 @@ namespace ofxAsio {
 		public:
 			EndPoint();
 			EndPoint(asio::ip::udp::endpoint &);
-			EndPoint(string ipAddress, int port);
+			EndPoint(std::string ipAddress, int port);
 
 			asio::ip::udp::endpoint & getEndPoint();
 			const asio::ip::udp::endpoint & getEndPoint() const;
@@ -16,6 +16,6 @@ namespace ofxAsio {
 			asio::ip::udp::endpoint endPoint;
 		};
 
-		ostream & operator<<(ostream &, const EndPoint &);
+		std::ostream & operator<<(std::ostream &, const EndPoint &);
 	}
 }

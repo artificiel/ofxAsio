@@ -14,7 +14,7 @@ namespace ofxAsio {
 			socket.open(asio::ip::udp::v4());
 			socket.set_option(option);
 
-			this->asyncThread = thread([this]() {
+			this->asyncThread = std::thread([this]() {
 				this->ioService.run();
 			});
 		}
@@ -24,7 +24,7 @@ namespace ofxAsio {
 			: socket(this->ioService, asio::ip::udp::endpoint(asio::ip::udp::v4(), port))
 			, work(this->ioService)
 		{
-			this->asyncThread = thread([this]() {
+			this->asyncThread = std::thread([this]() {
 				this->ioService.run();
 			});
 		}
@@ -35,9 +35,9 @@ namespace ofxAsio {
 		}
 
 		//----------
-		shared_ptr<DataGram> Socket::receive(size_t bufferSize) {
+		std::shared_ptr<DataGram> Socket::receive(size_t bufferSize) {
 			asio::error_code errorCode;
-			auto dataGram = make_shared<DataGram>();
+			auto dataGram = std::make_shared<DataGram>();
 			auto & message = dataGram->getMessage();
 			message.resize(bufferSize);
 
@@ -48,7 +48,7 @@ namespace ofxAsio {
 			if (errorCode) {
 				//return empty pointer if we failed to receive
 				ofLogError("ofxAsio::UDP::Socket::receive") << "Cannot receive data. " << asio::system_error(errorCode).what();
-				return shared_ptr<DataGram>();
+				return std::shared_ptr<DataGram>();
 			}
 			else {
 				//return pointer to a DataGram object if succeed
@@ -58,7 +58,7 @@ namespace ofxAsio {
 		}
 
 		//----------
-		void Socket::asyncReceiveOnce(const function<void(AsyncArguments)> & callback, size_t bufferSize) {
+		void Socket::asyncReceiveOnce(const std::function<void(AsyncArguments)> & callback, size_t bufferSize) {
 			this->asyncIncoming.buffer.resize(bufferSize);
 			this->socket.async_receive_from(
 				asio::buffer(this->asyncIncoming.buffer),
@@ -69,12 +69,12 @@ namespace ofxAsio {
 					AsyncArguments args = {
 						false,
 						asio::system_error(errorCode).what(),
-						shared_ptr<DataGram>()
+						std::shared_ptr<DataGram>()
 					};
 					callback(args);
 				}
 				else {
-					auto dataGram = make_shared<DataGram>();
+					auto dataGram = std::make_shared<DataGram>();
 					dataGram->getMessage().set(this->asyncIncoming.buffer);
 					dataGram->setEndPoint(this->asyncIncoming.endpoint);
 
@@ -89,7 +89,7 @@ namespace ofxAsio {
 		}
 
 		//----------
-		void Socket::asyncReceiveAll(const function<void(AsyncArguments)> & callback, size_t bufferSize) {
+		void Socket::asyncReceiveAll(const std::function<void(AsyncArguments)> & callback, size_t bufferSize) {
 			this->asyncReceiveOnce([this, callback, bufferSize](AsyncArguments args) {
 				asyncReceiveAll(callback, bufferSize);
 				callback(args);
@@ -97,7 +97,7 @@ namespace ofxAsio {
 		}
 
 		//----------
-		bool Socket::send(shared_ptr<DataGram> dataGram) {
+		bool Socket::send(std::shared_ptr<DataGram> dataGram) {
 			asio::error_code errorCode;
 			const auto & message = dataGram->getMessage();
 			const auto & endPoint = dataGram->getEndPoint().getEndPoint();

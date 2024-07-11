@@ -21,11 +21,11 @@ namespace ofxAsio {
 			void resize(size_t size);
 
 			//set data
-			void set(const string &, Allocation allocation = Allocation::Copy);
+			void set(const std::string &, Allocation allocation = Allocation::Copy);
 			void set(const void * data, size_t size, Allocation allocation = Allocation::Copy);
 			template<typename PodType>
 			void set(const PodType & data, Allocation allocation = Allocation::Copy) {
-				static_assert(is_pod<PodType>::value, "ofxAsio::DataGram::set<PodType>(...)  only supports Plain Old Data. For more complex types, you need to serialize your data first.");
+				static_assert(std::is_pod<PodType>::value, "ofxAsio::DataGram::set<PodType>(...)  only supports Plain Old Data. For more complex types, you need to serialize your data first.");
 				this->set(&data, sizeof(PodType), allocation);
 			}
 			void clear();
@@ -35,7 +35,7 @@ namespace ofxAsio {
 			const char * data() const;
 			char * data();
 			size_t size() const;
-			string getMessageString() const;
+			std::string getMessageString() const;
 
 			Allocation getAllocation() const;
 		protected:

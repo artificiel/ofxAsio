@@ -8,7 +8,7 @@ using namespace asio::ip;
 namespace ofxAsio {
 	namespace TCP {
 		//----------
-		void Client::init(string address, int port) {
+		void Client::init(std::string address, int port) {
 			this->active = true;
 			this->address = address;
 			this->port = port;
